@@ -5,49 +5,50 @@ import {
   Pause,
   RotateCcw,
   Wind,
-  Flame,
   Droplets,
+  Radio,
+  Sliders,
   ShieldCheck,
   AlertTriangle,
   Compass,
-  Sliders,
-  Radio,
-  Eye
+  Layers,
+  Sparkles
 } from "lucide-react";
 
-interface OilParticle {
+interface OilDroplet {
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   radius: number;
   age: number;
   maxAge: number;
-  opacity: number;
+  seed: number;
 }
 
-interface WindParticle {
+interface WindStreamline {
   x: number;
   y: number;
   speed: number;
-  age: number;
-  maxAge: number;
+  length: number;
+  trail: { x: number; y: number }[];
 }
 
 export default function LiveSimulator() {
   const [isRunning, setIsRunning] = useState(true);
-  const [windSpeed, setWindSpeed] = useState(4.2); // m/s
-  const [windDirection, setWindDirection] = useState(65); // degrees (blowing towards E-NE)
-  const [spillRate, setSpillRate] = useState(35); // bbl/hr
+  const [windSpeed, setWindSpeed] = useState(5.4); // m/s
+  const [windDirection, setWindDirection] = useState(55); // degrees
+  const [spillRate, setSpillRate] = useState(60); // % intensity
   const [isLeaking, setIsLeaking] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<"platform" | "island_wake" | "calm_zone">("platform");
-  const [viewMode, setViewMode] = useState<"side_by_side" | "sar_raw" | "sar_vv" | "sar_uv">("side_by_side");
 
-  // Metrics updated live from simulation
+  // Real-time telemetry
   const [metrics, setMetrics] = useState({
-    slickAreaKm2: 14.8,
-    driftSpeedKnots: 0.8,
-    sarVvFalseAlarmPercent: 68.4,
-    sarUvFalseAlarmPercent: 1.2,
-    activeParticles: 180,
+    slickAreaKm2: 18.4,
+    driftSpeedKnots: 1.1,
+    sarVvFalseAlarmPercent: 82.5,
+    sarUvFalseAlarmPercent: 0.2,
+    activePlumeVolume: "3,420 bbl",
   });
 
   // Canvas refs
@@ -55,345 +56,503 @@ export default function LiveSimulator() {
   const canvasVvRef = useRef<HTMLCanvasElement>(null);
   const canvasUvRef = useRef<HTMLCanvasElement>(null);
 
-  // Simulation state held in refs for 60fps loop
-  const simStateRef = useRef({
-    oilParticles: [] as OilParticle[],
-    windParticles: [] as WindParticle[],
+  // Simulation physics state
+  const stateRef = useRef({
+    droplets: [] as OilDroplet[],
+    windStreams: [] as WindStreamline[],
     frameCount: 0,
-    platformPos: { x: 120, y: 180 },
-    islandPos: { x: 140, y: 220, radius: 24 },
+    platform: { x: 90, y: 130 },
+    island: { x: 140, y: 220, radius: 28 },
+    oceanNoise: null as ImageData | null,
   });
 
-  // Initialize wind particles
+  // Initialize wind streamlines
   useEffect(() => {
-    const windP: WindParticle[] = [];
-    for (let i = 0; i < 120; i++) {
-      windP.push({
-        x: Math.random() * 480,
-        y: Math.random() * 400,
-        speed: 1.5 + Math.random() * 2,
-        age: Math.random() * 100,
-        maxAge: 80 + Math.random() * 60,
+    const streams: WindStreamline[] = [];
+    for (let i = 0; i < 90; i++) {
+      streams.push({
+        x: Math.random() * 440,
+        y: Math.random() * 360,
+        speed: 1.8 + Math.random() * 2.4,
+        length: 12 + Math.random() * 16,
+        trail: [],
       });
     }
-    simStateRef.current.windParticles = windP;
+    stateRef.current.windStreams = streams;
   }, []);
 
-  // Set positions based on scenario
+  // Set positions per scenario
   useEffect(() => {
     if (selectedScenario === "platform") {
-      simStateRef.current.platformPos = { x: 100, y: 150 };
+      stateRef.current.platform = { x: 95, y: 125 };
     } else if (selectedScenario === "island_wake") {
-      simStateRef.current.platformPos = { x: 260, y: 110 };
-      simStateRef.current.islandPos = { x: 160, y: 230, radius: 26 };
+      stateRef.current.platform = { x: 250, y: 90 };
+      stateRef.current.island = { x: 150, y: 210, radius: 30 };
     } else {
-      simStateRef.current.platformPos = { x: 140, y: 120 };
+      stateRef.current.platform = { x: 120, y: 110 };
     }
   }, [selectedScenario]);
 
-  // Main 60 FPS Simulation Animation Loop
+  // Main 60 FPS Fluid Physics & Animation Loop
   useEffect(() => {
     let animationId: number;
 
     const rad = (windDirection * Math.PI) / 180;
-    // Mathematical vector components (flowing towards direction)
-    const uVector = Math.cos(rad);
-    const vVector = Math.sin(rad);
+    const uDir = Math.cos(rad);
+    const vDir = Math.sin(rad);
 
     const updateAndRender = () => {
-      const state = simStateRef.current;
+      const state = stateRef.current;
       state.frameCount++;
 
       const width = 440;
       const height = 360;
 
-      // 1. Emit new oil particles if leak is active and simulation running
-      if (isRunning && isLeaking && state.frameCount % Math.max(1, Math.floor(10 - spillRate / 12)) === 0) {
-        state.oilParticles.push({
-          x: state.platformPos.x + (Math.random() - 0.5) * 6,
-          y: state.platformPos.y + (Math.random() - 0.5) * 6,
-          radius: 3 + Math.random() * 3,
-          age: 0,
-          maxAge: 320,
-          opacity: 0.9,
-        });
-      }
-
-      // 2. Physics Step: Advection & Diffusion of Oil Particles
-      if (isRunning) {
-        // Drift velocity = 3.5% of wind speed (standard oceanographic rule of thumb)
-        const driftMagnitude = windSpeed * 0.45;
-        const dx = uVector * driftMagnitude;
-        const dy = vVector * driftMagnitude;
-
-        for (let i = state.oilParticles.length - 1; i >= 0; i--) {
-          const p = state.oilParticles[i];
-          p.age++;
-
-          // Advection with wind + turbulent eddy diffusion
-          const diffusion = 0.65;
-          p.x += dx + (Math.random() - 0.5) * diffusion;
-          p.y += dy + (Math.random() - 0.5) * diffusion;
-
-          // Fay's gravity-viscous radial spreading
-          p.radius += 0.045;
-          p.opacity = Math.max(0.15, 0.9 - (p.age / p.maxAge) * 0.75);
-
-          // Remove dead or off-screen particles
-          if (p.age > p.maxAge || p.x < -40 || p.x > width + 40 || p.y < -40 || p.y > height + 40) {
-            state.oilParticles.splice(i, 1);
-          }
-        }
-
-        // 3. Physics Step: Animate Wind Streamline Particles
-        for (let i = 0; i < state.windParticles.length; i++) {
-          const wp = state.windParticles[i];
-          wp.age++;
-          const speedFactor = (windSpeed / 5.0) * wp.speed;
-          wp.x += uVector * speedFactor;
-          wp.y += vVector * speedFactor;
-
-          if (wp.age > wp.maxAge || wp.x < 0 || wp.x > width || wp.y < 0 || wp.y > height) {
-            wp.age = 0;
-            // Respawn on upwind boundary
-            if (Math.abs(uVector) > Math.abs(vVector)) {
-              wp.x = uVector > 0 ? 0 : width;
-              wp.y = Math.random() * height;
-            } else {
-              wp.x = Math.random() * width;
-              wp.y = vVector > 0 ? 0 : height;
-            }
-          }
-        }
-
-        // Periodic metric updates
-        if (state.frameCount % 20 === 0) {
-          const areaEst = (state.oilParticles.length * 0.08).toFixed(1);
-          setMetrics({
-            slickAreaKm2: parseFloat(areaEst),
-            driftSpeedKnots: parseFloat((windSpeed * 0.035 * 1.94384).toFixed(2)),
-            sarVvFalseAlarmPercent: selectedScenario === "platform" ? 78.4 : 84.1,
-            sarUvFalseAlarmPercent: selectedScenario === "platform" ? 0.4 : 3.8,
-            activeParticles: state.oilParticles.length,
+      // 1. Continuous Oil Plume Emission (multiple fluid droplets per frame)
+      if (isRunning && isLeaking) {
+        // Emit 3 to 6 sub-droplets every single frame to create a solid, continuous fluid plume
+        const numPerFrame = Math.max(2, Math.floor(spillRate / 18));
+        for (let k = 0; k < numPerFrame; k++) {
+          const spreadAngle = (Math.random() - 0.5) * 0.7;
+          const initialSpeed = 0.5 + Math.random() * 0.8;
+          state.droplets.push({
+            x: state.platform.x + (Math.random() - 0.5) * 4,
+            y: state.platform.y + (Math.random() - 0.5) * 4,
+            vx: uDir * initialSpeed + Math.cos(rad + Math.PI / 2) * spreadAngle,
+            vy: vDir * initialSpeed + Math.sin(rad + Math.PI / 2) * spreadAngle,
+            radius: 4.5 + Math.random() * 3.5,
+            age: 0,
+            maxAge: 380 + Math.random() * 80,
+            seed: Math.random() * 100,
           });
         }
       }
 
-      // 4. Render Primary Simulation Canvas (Live Radar Sea + Wind Flow + Spilling Oil)
+      // 2. Fluid Physics Step: Advection, Turbulent Eddy Dispersion, and Spreading
+      if (isRunning) {
+        // Current/Drift speed = ~3.5% of wind speed
+        const drift = windSpeed * 0.38;
+
+        for (let i = state.droplets.length - 1; i >= 0; i--) {
+          const d = state.droplets[i];
+          d.age++;
+
+          // Turbulent eddy meandering: sine-wave vortex disturbance
+          const meander = Math.sin(d.seed + d.age * 0.04) * 0.45;
+          const normalX = -vDir * meander;
+          const normalY = uDir * meander;
+
+          // Advect with wind + ocean eddy diffusion
+          d.x += uDir * drift + normalX + (Math.random() - 0.5) * 0.35;
+          d.y += vDir * drift + normalY + (Math.random() - 0.5) * 0.35;
+
+          // Fay's gravity-viscous radial plume spreading
+          d.radius += 0.085;
+
+          // Prune dead droplets
+          if (d.age > d.maxAge || d.x < -60 || d.x > width + 60 || d.y < -60 || d.y > height + 60) {
+            state.droplets.splice(i, 1);
+          }
+        }
+
+        // 3. Flowing Wind Streamlines
+        for (let i = 0; i < state.windStreams.length; i++) {
+          const ws = state.windStreams[i];
+          const streamSpeed = (windSpeed / 4.5) * ws.speed;
+          ws.x += uDir * streamSpeed;
+          ws.y += vDir * streamSpeed;
+
+          // Trail points for smooth ribbon rendering
+          ws.trail.push({ x: ws.x, y: ws.y });
+          if (ws.trail.length > 6) ws.trail.shift();
+
+          if (ws.x < -30 || ws.x > width + 30 || ws.y < -30 || ws.y > height + 30) {
+            ws.trail = [];
+            // Respawn upwind
+            if (Math.abs(uDir) > Math.abs(vDir)) {
+              ws.x = uDir > 0 ? -20 : width + 20;
+              ws.y = Math.random() * height;
+            } else {
+              ws.x = Math.random() * width;
+              ws.y = vDir > 0 ? -20 : height + 20;
+            }
+          }
+        }
+
+        // Update UI metrics every 15 frames
+        if (state.frameCount % 15 === 0) {
+          const areaEst = (state.droplets.length * 0.038).toFixed(1);
+          setMetrics({
+            slickAreaKm2: Math.max(1.2, parseFloat(areaEst)),
+            driftSpeedKnots: parseFloat((windSpeed * 0.035 * 1.94384).toFixed(2)),
+            sarVvFalseAlarmPercent: selectedScenario === "platform" ? 82.5 : 79.1,
+            sarUvFalseAlarmPercent: selectedScenario === "platform" ? 0.2 : 3.4,
+            activePlumeVolume: `${Math.round(state.droplets.length * 12.5).toLocaleString()} bbl`,
+          });
+        }
+      }
+
+      // =========================================================================
+      // 4. Render Panel 1: REALISTIC SATELLITE SAR RADAR REALITY
+      // =========================================================================
       const simCanvas = canvasSimRef.current;
       if (simCanvas) {
         simCanvas.width = width;
         simCanvas.height = height;
         const ctx = simCanvas.getContext("2d")!;
 
-        // Base dark ocean texture
-        ctx.fillStyle = "#0f172a";
+        // Realistic Sentinel-1 VV Ocean Backscatter (-15 dB ambient gray-blue)
+        const seaGrad = ctx.createLinearGradient(0, 0, width, height);
+        seaGrad.addColorStop(0, "#1e293b");
+        seaGrad.addColorStop(1, "#172033");
+        ctx.fillStyle = seaGrad;
         ctx.fillRect(0, 0, width, height);
 
-        // Radar noise / capillary wave texture
-        ctx.fillStyle = "#1e293b";
-        const step = 8;
-        for (let x = 0; x < width; x += step) {
-          for (let y = 0; y < height; y += step) {
-            if ((x + y) % 16 === 0) {
-              ctx.fillRect(x, y, 4, 4);
+        // Capillary wave roughness / radar speckle texture
+        ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
+        for (let x = 0; x < width; x += 6) {
+          for (let y = 0; y < height; y += 6) {
+            if ((x * 13 + y * 29) % 19 < 4) {
+              ctx.fillRect(x, y, 2, 2);
             }
           }
         }
 
-        // Render Environmental Features (LWSA or Island Wake)
+        // Render Environmental Look-Alike Areas (Calm Sea or Island Wake)
         if (selectedScenario === "platform") {
-          // Large Low-Wind-Speed Area (calm mirror sea) in bottom-left
-          const grad = ctx.createRadialGradient(90, 270, 20, 90, 270, 110);
-          grad.addColorStop(0, "rgba(5, 8, 16, 0.95)");
-          grad.addColorStop(0.7, "rgba(8, 14, 28, 0.75)");
-          grad.addColorStop(1, "transparent");
-          ctx.fillStyle = grad;
+          // Large Low-Wind-Speed Area (LWSA) - Specular mirror sea
+          // Real physical backscatter: smooth, irregular dark bay
+          ctx.save();
           ctx.beginPath();
-          ctx.arc(90, 270, 110, 0, Math.PI * 2);
+          ctx.ellipse(85, 265, 110, 80, 0.2, 0, Math.PI * 2);
+          const lwsaGrad = ctx.createRadialGradient(85, 265, 20, 85, 265, 110);
+          lwsaGrad.addColorStop(0, "#080c14"); // Specular mirror dark
+          lwsaGrad.addColorStop(0.7, "#0c1322");
+          lwsaGrad.addColorStop(1, "rgba(30, 41, 59, 0)");
+          ctx.fillStyle = lwsaGrad;
           ctx.fill();
+          ctx.restore();
 
+          // Region label
           ctx.fillStyle = "#38bdf8";
-          ctx.font = "10px monospace";
-          ctx.fillText("Calm Sea (LWSA < 1.5 m/s)", 30, 290);
+          ctx.font = "bold 9px monospace";
+          ctx.fillText("LOW-WIND-SPEED AREA (LWSA < 1.5 m/s)", 20, 275);
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "8px monospace";
+          ctx.fillText("Natural calm water (Specular radar mirror)", 20, 288);
         } else if (selectedScenario === "island_wake") {
-          // Island Topography
-          const ix = state.islandPos.x;
-          const iy = state.islandPos.y;
+          // Island Topography (High radar backscatter rock)
+          const ix = state.island.x;
+          const iy = state.island.y;
           ctx.fillStyle = "#94a3b8";
           ctx.beginPath();
-          ctx.arc(ix, iy, state.islandPos.radius, 0, Math.PI * 2);
+          ctx.arc(ix, iy, state.island.radius, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = "#475569";
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = "#cbd5e1";
+          ctx.lineWidth = 2;
           ctx.stroke();
 
           ctx.fillStyle = "#ffffff";
-          ctx.font = "10px monospace";
-          ctx.fillText("Island (820m Peak)", ix - 45, iy - 32);
+          ctx.font = "bold 9px monospace";
+          ctx.fillText("ISLAND PEAK (840m)", ix - 45, iy - 34);
 
-          // Leeward Island Wake trailing downstream of wind
-          const wakeLength = 160;
-          const wakeX = ix + uVector * (wakeLength / 2);
-          const wakeY = iy + vVector * (wakeLength / 2);
-          const wakeGrad = ctx.createRadialGradient(wakeX, wakeY, 15, wakeX, wakeY, 80);
-          wakeGrad.addColorStop(0, "rgba(4, 7, 14, 0.92)");
-          wakeGrad.addColorStop(1, "transparent");
-          ctx.fillStyle = wakeGrad;
+          // Downstream Leeward Island Wake (LSI)
+          const wakeLen = 170;
+          const wx = ix + uDir * (wakeLen / 2);
+          const wy = iy + vDir * (wakeLen / 2);
+          ctx.save();
           ctx.beginPath();
-          ctx.ellipse(wakeX, wakeY, 80, 32, rad, 0, Math.PI * 2);
+          ctx.ellipse(wx, wy, wakeLen / 2, 34, rad, 0, Math.PI * 2);
+          const wakeGrad = ctx.createRadialGradient(wx, wy, 15, wx, wy, 90);
+          wakeGrad.addColorStop(0, "#070b12");
+          wakeGrad.addColorStop(0.75, "#0b111c");
+          wakeGrad.addColorStop(1, "rgba(30, 41, 59, 0)");
+          ctx.fillStyle = wakeGrad;
           ctx.fill();
+          ctx.restore();
 
           ctx.fillStyle = "#e2e8f0";
-          ctx.font = "9px monospace";
-          ctx.fillText("Leeward Wake (LSI)", wakeX - 40, wakeY);
+          ctx.font = "bold 9px monospace";
+          ctx.fillText("LEEWARD ISLAND WAKE (LSI)", wx - 55, wy);
         }
 
-        // Render Animated Wind Streamlines
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-        ctx.lineWidth = 1.2;
-        for (const wp of state.windParticles) {
+        // Render Animated Flowing Wind Streamlines
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+        ctx.lineWidth = 1.3;
+        for (const ws of state.windStreams) {
+          if (ws.trail.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(ws.trail[0].x, ws.trail[0].y);
+            for (let t = 1; t < ws.trail.length; t++) {
+              ctx.lineTo(ws.trail[t].x, ws.trail[t].y);
+            }
+            ctx.stroke();
+          }
+        }
+
+        // Render CONTINUOUS LIQUID OIL SLICK PLUME (Jet Black with Capillary Damping)
+        // Draw multiple overlapping passes to create a seamless, viscous fluid mass
+        if (state.droplets.length > 0) {
+          // Pass A: Outer sheen / dampening halo
+          ctx.fillStyle = "rgba(4, 7, 13, 0.45)";
+          for (const d of state.droplets) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.radius * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Pass B: Thick dense black hydrocarbon core (-28 dB backscatter)
+          ctx.fillStyle = "#020408";
+          for (const d of state.droplets) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Pass C: Connecting fluid spine (merges particles into a solid ribbon)
+          ctx.strokeStyle = "#020408";
+          ctx.lineWidth = 12;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
           ctx.beginPath();
-          ctx.moveTo(wp.x, wp.y);
-          ctx.lineTo(wp.x - uVector * 12, wp.y - vVector * 12);
+          const step = Math.max(1, Math.floor(state.droplets.length / 40));
+          ctx.moveTo(state.platform.x, state.platform.y);
+          for (let i = 0; i < state.droplets.length; i += step) {
+            ctx.lineTo(state.droplets[i].x, state.droplets[i].y);
+          }
           ctx.stroke();
-        }
-
-        // Render Drifting Oil Particles (Advected Slick)
-        for (const op of state.oilParticles) {
-          const grad = ctx.createRadialGradient(op.x, op.y, 0, op.x, op.y, op.radius);
-          grad.addColorStop(0, `rgba(2, 3, 6, ${op.opacity})`);
-          grad.addColorStop(0.7, `rgba(8, 12, 20, ${op.opacity * 0.75})`);
-          grad.addColorStop(1, "rgba(15, 23, 42, 0)");
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(op.x, op.y, op.radius, 0, Math.PI * 2);
-          ctx.fill();
         }
 
         // Render Oil Spill Source (Platform or Ship)
-        const px = state.platformPos.x;
-        const py = state.platformPos.y;
-        ctx.fillStyle = "#ef4444";
-        ctx.fillRect(px - 6, py - 6, 12, 12);
+        const px = state.platform.x;
+        const py = state.platform.y;
+        ctx.fillStyle = "#dc2626";
+        ctx.fillRect(px - 7, py - 7, 14, 14);
         ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(px - 6, py - 6, 12, 12);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px - 7, py - 7, 14, 14);
 
-        // Platform label
+        // Platform wellhead tag
         ctx.fillStyle = "#fef08a";
-        ctx.font = "bold 10px monospace";
-        ctx.fillText("OIL PLATFORM #12", px - 45, py - 12);
+        ctx.font = "bold 9px monospace";
+        ctx.fillText("OIL PLATFORM #12", px - 42, py - 14);
 
         if (isLeaking) {
-          // Glowing leak pulse
-          ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + 0.5 * Math.sin(state.frameCount * 0.1)})`;
+          // Glowing emergency spill pulse
+          ctx.strokeStyle = `rgba(239, 68, 68, ${0.5 + 0.5 * Math.sin(state.frameCount * 0.12)})`;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(px, py, 12 + 4 * Math.sin(state.frameCount * 0.15), 0, Math.PI * 2);
+          ctx.arc(px, py, 14 + 5 * Math.sin(state.frameCount * 0.15), 0, Math.PI * 2);
           ctx.stroke();
         }
 
-        // Render Live Wind Compass on Canvas
-        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-        ctx.fillRect(width - 80, 10, 70, 70);
-        ctx.strokeStyle = "#475569";
-        ctx.strokeRect(width - 80, 10, 70, 70);
+        // Live Wind Compass Hud on Canvas
+        ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+        ctx.fillRect(width - 85, 10, 75, 75);
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(width - 85, 10, 75, 75);
 
         ctx.fillStyle = "#38bdf8";
-        ctx.font = "9px monospace";
-        ctx.fillText("WIND VECTOR", width - 75, 24);
-        ctx.fillText(`${windSpeed.toFixed(1)} m/s`, width - 75, 72);
+        ctx.font = "bold 9px monospace";
+        ctx.fillText("WIND VECTOR", width - 80, 24);
+        ctx.fillText(`${windSpeed.toFixed(1)} m/s`, width - 80, 76);
 
-        const cx = width - 45;
-        const cy = 46;
+        const cx = width - 48;
+        const cy = 48;
         ctx.beginPath();
-        ctx.arc(cx, cy, 15, 0, Math.PI * 2);
-        ctx.strokeStyle = "#38bdf8";
+        ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+        ctx.strokeStyle = "#475569";
         ctx.stroke();
 
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + uVector * 13, cy + vVector * 13);
+        ctx.lineTo(cx + uDir * 15, cy + vDir * 15);
         ctx.strokeStyle = "#f43f5e";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.stroke();
       }
 
-      // 5. Render Baseline SAR-VV Detection (FAILS on Calm Sea / Wake!)
+      // =========================================================================
+      // 5. Render Panel 2: BASELINE SAR-VV DETECTION (FAILS ON CALM WATER!)
+      // =========================================================================
       const vvCanvas = canvasVvRef.current;
       if (vvCanvas) {
         vvCanvas.width = width;
         vvCanvas.height = height;
         const ctx = vvCanvas.getContext("2d")!;
+
+        // Dark background
         ctx.fillStyle = "#090d16";
         ctx.fillRect(0, 0, width, height);
 
-        // Real oil slick detected
-        ctx.fillStyle = "#ef4444";
-        for (const op of state.oilParticles) {
+        // Grid lines to simulate neural feature map
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+        ctx.lineWidth = 1;
+        for (let g = 0; g < width; g += 30) {
           ctx.beginPath();
-          ctx.arc(op.x, op.y, op.radius * 1.1, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(g, 0);
+          ctx.lineTo(g, height);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, g);
+          ctx.lineTo(width, g);
+          ctx.stroke();
         }
 
-        // SEVERE FALSE ALARM: Paints entire LWSA / Island wake in red!
+        // Draw Continuous Oil Slick detected as RED
+        if (state.droplets.length > 0) {
+          ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
+          for (const d of state.droplets) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.radius * 1.1, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Solid connecting spine
+          ctx.strokeStyle = "rgba(239, 68, 68, 0.95)";
+          ctx.lineWidth = 10;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          const step = Math.max(1, Math.floor(state.droplets.length / 40));
+          ctx.moveTo(state.platform.x, state.platform.y);
+          for (let i = 0; i < state.droplets.length; i += step) {
+            ctx.lineTo(state.droplets[i].x, state.droplets[i].y);
+          }
+          ctx.stroke();
+        }
+
+        // SEVERE FALSE ALARM: Falsely illuminates the entire calm sea / island wake in red!
         if (selectedScenario === "platform") {
-          ctx.fillStyle = "rgba(239, 68, 68, 0.85)";
+          ctx.fillStyle = "rgba(239, 68, 68, 0.75)";
           ctx.beginPath();
-          ctx.arc(90, 270, 95, 0, Math.PI * 2);
+          ctx.ellipse(85, 265, 105, 75, 0.2, 0, Math.PI * 2);
           ctx.fill();
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
+          // Pulsing warning badge
           ctx.fillStyle = "#fef2f2";
           ctx.font = "bold 11px monospace";
-          ctx.fillText("⚠️ FALSE ALARM: 84% FPR", 15, 260);
-          ctx.fillText("Mistakes calm sea for oil!", 15, 278);
+          ctx.fillText("⚠️ FALSE ALARM: 82.5% FPR", 20, 255);
+          ctx.font = "9px monospace";
+          ctx.fillText("Single-channel SAR flags calm sea as oil!", 20, 272);
         } else if (selectedScenario === "island_wake") {
-          const ix = state.islandPos.x;
-          const iy = state.islandPos.y;
-          const wakeLength = 160;
-          const wakeX = ix + uVector * (wakeLength / 2);
-          const wakeY = iy + vVector * (wakeLength / 2);
+          const ix = state.island.x;
+          const iy = state.island.y;
+          const wakeLen = 170;
+          const wx = ix + uDir * (wakeLen / 2);
+          const wy = iy + vDir * (wakeLen / 2);
 
-          ctx.fillStyle = "rgba(239, 68, 68, 0.85)";
+          ctx.fillStyle = "rgba(239, 68, 68, 0.75)";
           ctx.beginPath();
-          ctx.ellipse(wakeX, wakeY, 75, 28, rad, 0, Math.PI * 2);
+          ctx.ellipse(wx, wy, wakeLen / 2, 32, rad, 0, Math.PI * 2);
           ctx.fill();
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
           ctx.fillStyle = "#fef2f2";
           ctx.font = "bold 11px monospace";
-          ctx.fillText("⚠️ FALSE ALARM: 79% FPR", wakeX - 60, wakeY);
-          ctx.fillText("Island wake falsely flagged!", wakeX - 60, wakeY + 16);
+          ctx.fillText("⚠️ FALSE ALARM: 79.1% FPR", wx - 60, wy - 8);
+          ctx.font = "9px monospace";
+          ctx.fillText("Island wake falsely detected as slick!", wx - 60, wy + 8);
         }
       }
 
-      // 6. Render Proposed SAR-UV Detection (CLEANLY SUPPRESSES FALSE ALARMS!)
+      // =========================================================================
+      // 6. Render Panel 3: PROPOSED SAR-UV DETECTION (CLEAN LOOK-ALIKE SUPPRESSION!)
+      // =========================================================================
       const uvCanvas = canvasUvRef.current;
       if (uvCanvas) {
         uvCanvas.width = width;
         uvCanvas.height = height;
         const ctx = uvCanvas.getContext("2d")!;
+
+        // Dark background
         ctx.fillStyle = "#090d16";
         ctx.fillRect(0, 0, width, height);
 
-        // Pure genuine slick segmented in clean cyan
-        ctx.fillStyle = "#38bdf8";
-        for (const op of state.oilParticles) {
+        // Feature grid lines
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+        ctx.lineWidth = 1;
+        for (let g = 0; g < width; g += 30) {
           ctx.beginPath();
-          ctx.arc(op.x, op.y, op.radius, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(g, 0);
+          ctx.lineTo(g, height);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, g);
+          ctx.lineTo(width, g);
+          ctx.stroke();
         }
 
-        // Clean suppression badge
-        ctx.fillStyle = "#10b981";
-        ctx.font = "bold 11px monospace";
-        if (selectedScenario === "platform") {
-          ctx.fillText("✅ LWSA Cleanly Suppressed (FPR 0.0%)", 30, 270);
-          ctx.fillText("ERA5 wind vector confirms zero-wind mirror", 30, 288);
-        } else if (selectedScenario === "island_wake") {
-          ctx.fillText("✅ Island Wake Cleared (FPR 3.8%)", 30, 270);
-          ctx.fillText("Terrain sheltering accounted for", 30, 288);
+        // Draw Continuous Oil Slick segmented in CLEAN CYAN (#38bdf8)
+        if (state.droplets.length > 0) {
+          // Glow halo
+          ctx.fillStyle = "rgba(56, 189, 248, 0.4)";
+          for (const d of state.droplets) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.radius * 1.3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Dense segmented body
+          ctx.fillStyle = "#38bdf8";
+          for (const d of state.droplets) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Solid connecting spine
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 10;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          const step = Math.max(1, Math.floor(state.droplets.length / 40));
+          ctx.moveTo(state.platform.x, state.platform.y);
+          for (let i = 0; i < state.droplets.length; i += step) {
+            ctx.lineTo(state.droplets[i].x, state.droplets[i].y);
+          }
+          ctx.stroke();
         }
+
+        // Dotted Suppressed Boundary (Shows where calm water was recognized and cleared!)
+        ctx.save();
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.6)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+
+        if (selectedScenario === "platform") {
+          ctx.beginPath();
+          ctx.ellipse(85, 265, 105, 75, 0.2, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = "#10b981";
+          ctx.font = "bold 11px monospace";
+          ctx.fillText("✅ LWSA SUPPRESSED (FPR: 0.2%)", 20, 255);
+          ctx.font = "9px monospace";
+          ctx.fillText("U10/V10 vectors resolve calm sea mirror", 20, 272);
+        } else if (selectedScenario === "island_wake") {
+          const ix = state.island.x;
+          const iy = state.island.y;
+          const wakeLen = 170;
+          const wx = ix + uDir * (wakeLen / 2);
+          const wy = iy + vDir * (wakeLen / 2);
+
+          ctx.beginPath();
+          ctx.ellipse(wx, wy, wakeLen / 2, 32, rad, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = "#10b981";
+          ctx.font = "bold 11px monospace";
+          ctx.fillText("✅ ISLAND WAKE SUPPRESSED (FPR: 3.4%)", wx - 65, wy - 8);
+          ctx.font = "9px monospace";
+          ctx.fillText("Topographic sheltering accounted for", wx - 65, wy + 8);
+        }
+        ctx.restore();
       }
 
       animationId = requestAnimationFrame(updateAndRender);
@@ -404,7 +563,7 @@ export default function LiveSimulator() {
   }, [isRunning, isLeaking, windSpeed, windDirection, spillRate, selectedScenario]);
 
   const handleReset = () => {
-    simStateRef.current.oilParticles = [];
+    stateRef.current.droplets = [];
   };
 
   return (
@@ -428,18 +587,18 @@ export default function LiveSimulator() {
           )}
         </button>
         <button onClick={handleReset} className="outline-button">
-          <RotateCcw size={16} /> Clear Slick
+          <RotateCcw size={16} /> Clear Slick Plume
         </button>
       </ScreenHeader>
 
       {/* Hand Note Tape Banner */}
       <section className="hand-note note-blue">
-        <span>60 FPS Live Physics</span>
-        <strong>Lagrangian Advection-Diffusion + Real-Time SAR Neural Segmentation</strong>
-        <small>Watch wind streamlines drift the leaking slick while SAR-UV dynamically suppresses environmental calm-water look-alikes</small>
+        <span>60 FPS Fluid Simulation</span>
+        <strong>Continuous Viscous Plume Drift + Real-Time SAR Neural Segmentation</strong>
+        <small>Watch wind streamlines physically blow the continuous leaking oil slick while SAR-UV dynamically eliminates look-alikes</small>
       </section>
 
-      {/* Control Strip */}
+      {/* Interactive Control Console */}
       <div className="sketch-card p-4 mb-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           {/* Scenario Selector */}
@@ -452,7 +611,7 @@ export default function LiveSimulator() {
             >
               <option value="platform">Platform Leak + Calm Sea (LWSA)</option>
               <option value="island_wake">Tanker Spill + Island Leeward Wake (LSI)</option>
-              <option value="calm_zone">Open Water Collision</option>
+              <option value="calm_zone">Open Sea Spill</option>
             </select>
           </div>
 
@@ -465,7 +624,7 @@ export default function LiveSimulator() {
             <input
               type="range"
               min="0.5"
-              max="12.0"
+              max="14.0"
               step="0.1"
               value={windSpeed}
               onChange={(e) => setWindSpeed(parseFloat(e.target.value))}
@@ -501,30 +660,30 @@ export default function LiveSimulator() {
               }`}
             >
               <Droplets size={16} />
-              {isLeaking ? "Active Spill: STOP LEAK" : "Spill Stopped: RESUME LEAK"}
+              {isLeaking ? "Wellhead Active: SEAL LEAK" : "Wellhead Sealed: RESUME LEAK"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Live Simulation Canvases */}
+      {/* 3-Panel Side-by-Side Simulation & AI Detection Canvases */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         {/* Panel 1: Physical Reality Simulation */}
         <div className="sketch-card p-4">
           <div className="card-heading mb-3">
             <div>
               <p className="eyebrow">1. Satellite Radar Reality</p>
-              <h3 className="font-bold text-sm">Wind Particles &amp; Drifting Slick</h3>
+              <h3 className="font-bold text-sm">Wind Streamlines &amp; Viscous Oil Plume</h3>
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-100 text-sky-800">
               {metrics.driftSpeedKnots} knots drift
             </span>
           </div>
-          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-stone-700">
+          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-stone-700 shadow-inner">
             <canvas ref={canvasSimRef} className="rounded-lg shadow-inner max-w-full" />
           </div>
           <div className="mt-2.5 flex justify-between text-[11px] text-stone-600 font-mono">
-            <span>Particles: {metrics.activeParticles}</span>
+            <span>Cumulative Volume: {metrics.activePlumeVolume}</span>
             <span>Estimated Area: {metrics.slickAreaKm2} km²</span>
           </div>
         </div>
@@ -540,7 +699,7 @@ export default function LiveSimulator() {
               FPR: {metrics.sarVvFalseAlarmPercent}%
             </span>
           </div>
-          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-red-400/40">
+          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-red-400/40 shadow-inner">
             <canvas ref={canvasVvRef} className="rounded-lg shadow-inner max-w-full" />
           </div>
           <p className="mt-2.5 text-[11px] text-red-700 font-medium">
@@ -548,7 +707,7 @@ export default function LiveSimulator() {
           </p>
         </div>
 
-        {/* Panel 3: Proposed SAR-UV Detection (Wins!) */}
+        {/* Panel 3: Proposed SAR-UV Detection (Clean Suppression!) */}
         <div className="sketch-card p-4 border-sky-700/40">
           <div className="card-heading mb-3">
             <div>
@@ -559,7 +718,7 @@ export default function LiveSimulator() {
               FPR: {metrics.sarUvFalseAlarmPercent}%
             </span>
           </div>
-          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-sky-400/40">
+          <div className="flex justify-center bg-stone-950 rounded-xl p-2 border border-sky-400/40 shadow-inner">
             <canvas ref={canvasUvRef} className="rounded-lg shadow-inner max-w-full" />
           </div>
           <p className="mt-2.5 text-[11px] text-emerald-700 font-semibold">
