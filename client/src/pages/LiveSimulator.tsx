@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Link } from "wouter";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import RealWorldMap, { realSpillSites, SpillLocation } from "@/components/RealWorldMap";
 import {
@@ -15,8 +16,10 @@ import {
   Layers,
   Sparkles,
   MapPin,
-  Globe2
+  Globe2,
+  History
 } from "lucide-react";
+
 
 
 interface OilDroplet {
@@ -46,9 +49,11 @@ export default function LiveSimulator() {
   const [isLeaking, setIsLeaking] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<"platform" | "island_wake" | "calm_zone">("platform");
   const [activeSiteId, setActiveSiteId] = useState("caspian");
+  const [simMode, setSimMode] = useState<"forward" | "backtrack">("forward");
 
   // Real-time telemetry
   const [metrics, setMetrics] = useState({
+
     slickAreaKm2: 18.4,
     driftSpeedKnots: 1.1,
     sarVvFalseAlarmPercent: 82.5,
@@ -138,8 +143,9 @@ export default function LiveSimulator() {
 
       // 2. Fluid Physics Step: Advection, Turbulent Eddy Dispersion, and Spreading
       if (isRunning) {
-        // Current/Drift speed = ~3.5% of wind speed
-        const drift = windSpeed * 0.38;
+        // Current/Drift speed = ~3.5% of wind speed (negated in reverse backtrack mode)
+        const drift = windSpeed * 0.38 * (simMode === "forward" ? 1 : -1);
+
 
         for (let i = state.droplets.length - 1; i >= 0; i--) {
           const d = state.droplets[i];
@@ -568,7 +574,8 @@ export default function LiveSimulator() {
 
     animationId = requestAnimationFrame(updateAndRender);
     return () => cancelAnimationFrame(animationId);
-  }, [isRunning, isLeaking, windSpeed, windDirection, spillRate, selectedScenario]);
+  }, [isRunning, isLeaking, windSpeed, windDirection, spillRate, selectedScenario, simMode]);
+
 
   const handleReset = () => {
     stateRef.current.droplets = [];
@@ -580,6 +587,31 @@ export default function LiveSimulator() {
         eyebrow="Interactive Oceanographic Hydrodynamic Engine"
         title="Live Oil Spill &amp; Wind Drift Simulator"
       >
+        <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-300 text-xs font-mono">
+          <button
+            onClick={() => setSimMode("forward")}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              simMode === "forward" ? "bg-stone-800 text-white shadow-sm" : "text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            Forward Drift (+t)
+          </button>
+          <button
+            onClick={() => setSimMode("backtrack")}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              simMode === "backtrack" ? "bg-rose-600 text-white shadow-sm" : "text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            Reverse Backtrack (-t)
+          </button>
+        </div>
+
+        <Link href="/backtracking">
+          <button className="outline-button flex items-center gap-1.5 text-purple-700 border-purple-300 hover:bg-purple-50">
+            <History size={16} /> Polluter Backtracking Studio
+          </button>
+        </Link>
+
         <button
           onClick={() => setIsRunning(!isRunning)}
           className={`solid-button ${isRunning ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
@@ -598,6 +630,7 @@ export default function LiveSimulator() {
           <RotateCcw size={16} /> Clear Slick Plume
         </button>
       </ScreenHeader>
+
 
       {/* Hand Note Tape Banner */}
       <section className="hand-note note-blue">
