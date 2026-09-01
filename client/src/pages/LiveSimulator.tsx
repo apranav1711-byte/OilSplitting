@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { ScreenHeader } from "@/components/ScreenHeader";
+import RealWorldMap, { realSpillSites, SpillLocation } from "@/components/RealWorldMap";
 import {
   Play,
   Pause,
@@ -12,8 +13,11 @@ import {
   AlertTriangle,
   Compass,
   Layers,
-  Sparkles
+  Sparkles,
+  MapPin,
+  Globe2
 } from "lucide-react";
+
 
 interface OilDroplet {
   x: number;
@@ -41,6 +45,7 @@ export default function LiveSimulator() {
   const [spillRate, setSpillRate] = useState(60); // % intensity
   const [isLeaking, setIsLeaking] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<"platform" | "island_wake" | "calm_zone">("platform");
+  const [activeSiteId, setActiveSiteId] = useState("caspian");
 
   // Real-time telemetry
   const [metrics, setMetrics] = useState({
@@ -81,15 +86,18 @@ export default function LiveSimulator() {
     stateRef.current.windStreams = streams;
   }, []);
 
-  // Set positions per scenario
+  // Set positions per scenario and sync with real map site
   useEffect(() => {
     if (selectedScenario === "platform") {
       stateRef.current.platform = { x: 95, y: 125 };
+      setActiveSiteId("caspian");
     } else if (selectedScenario === "island_wake") {
       stateRef.current.platform = { x: 250, y: 90 };
       stateRef.current.island = { x: 150, y: 210, radius: 30 };
+      setActiveSiteId("ionian");
     } else {
       stateRef.current.platform = { x: 120, y: 110 };
+      setActiveSiteId("redsea");
     }
   }, [selectedScenario]);
 
@@ -755,6 +763,24 @@ export default function LiveSimulator() {
           </div>
         </div>
       </section>
+
+      {/* Real-World Satellite & GIS Map Section */}
+      <section className="mt-6">
+        <RealWorldMap
+          currentWindSpeed={windSpeed}
+          currentWindDir={windDirection}
+          selectedSiteId={activeSiteId}
+          onSelectSite={(site) => {
+            setActiveSiteId(site.id);
+            setWindSpeed(site.windDefault.speed);
+            setWindDirection(site.windDefault.dir);
+            if (site.id === "caspian") setSelectedScenario("platform");
+            else if (site.id === "ionian") setSelectedScenario("island_wake");
+            else setSelectedScenario("calm_zone");
+          }}
+        />
+      </section>
     </div>
   );
 }
+

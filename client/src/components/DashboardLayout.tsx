@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
   Droplets,
+  Globe2,
   Radar,
   Activity,
   Wind,
@@ -24,12 +25,14 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Mission Overview", path: "/" },
   { icon: Droplets, label: "Live Spill Simulator", path: "/simulation", tag: "60 FPS" },
+  { icon: Globe2, label: "Geospatial Map", path: "/map", tag: "GIS" },
   { icon: Radar, label: "Detection Studio", path: "/detection", tag: "Dual" },
   { icon: Activity, label: "Look-Alike Feed", path: "/feed" },
   { icon: Wind, label: "Wind Lab (Perturbation)", path: "/wind-lab", tag: "Test" },
   { icon: SlidersHorizontal, label: "Model Transparency", path: "/transparency" },
   { icon: FileSpreadsheet, label: "Incident History", path: "/incidents" },
 ];
+
 
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
