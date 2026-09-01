@@ -151,19 +151,32 @@ export default function RealWorldMap({
     }
   }, [selectedSiteId]);
 
-  // Tile layer URLs
-  const tileLayers = {
-    satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    ocean: "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    osm: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  };
-
-  const tileAttributions = {
-    satellite: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
-    ocean: "Tiles &copy; Esri &mdash; GEBCO, NOAA, National Geographic, DeLorme, HERE, Geonames.org",
-    dark: "&copy; OpenStreetMap contributors &copy; CARTO",
-    osm: "&copy; OpenStreetMap contributors",
+  // Robust Tile layer configurations (100% free, NO API keys needed, smooth auto-scaling up to zoom 19)
+  const layerConfigs = {
+    satellite: {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      maxZoom: 19,
+      maxNativeZoom: 19,
+      attribution: "Tiles &copy; Esri &mdash; World Imagery",
+    },
+    ocean: {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
+      maxZoom: 19,
+      maxNativeZoom: 9, // Auto-scales zoom 9 tiles smoothly when zoomed in past level 9, preventing 'Map data not yet available'
+      attribution: "Tiles &copy; Esri &mdash; GEBCO, NOAA Bathymetry",
+    },
+    dark: {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      maxZoom: 19,
+      maxNativeZoom: 16, // Public Esri Canvas Dark (100% Free, NO API Key needed, no watermarks!)
+      attribution: "Tiles &copy; Esri &mdash; Dark Gray Canvas",
+    },
+    osm: {
+      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      maxZoom: 19,
+      maxNativeZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    },
   };
 
   // Initialize Leaflet Map
@@ -178,9 +191,11 @@ export default function RealWorldMap({
       attributionControl: false,
     });
 
-    const currentLayer = L.tileLayer(tileLayers[basemap], {
-      maxZoom: 18,
-      attribution: tileAttributions[basemap],
+    const config = layerConfigs[basemap];
+    const currentLayer = L.tileLayer(config.url, {
+      maxZoom: config.maxZoom,
+      maxNativeZoom: config.maxNativeZoom,
+      attribution: config.attribution,
     }).addTo(map);
 
     (map as any)._activeTileLayer = currentLayer;
@@ -218,9 +233,11 @@ export default function RealWorldMap({
       map.removeLayer((map as any)._activeTileLayer);
     }
 
-    const newLayer = L.tileLayer(tileLayers[basemap], {
-      maxZoom: 18,
-      attribution: tileAttributions[basemap],
+    const config = layerConfigs[basemap];
+    const newLayer = L.tileLayer(config.url, {
+      maxZoom: config.maxZoom,
+      maxNativeZoom: config.maxNativeZoom,
+      attribution: config.attribution,
     }).addTo(map);
 
     (map as any)._activeTileLayer = newLayer;
