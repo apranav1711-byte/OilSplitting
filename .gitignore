@@ -47,3 +47,6 @@ yarn-error.log*
 .pnpm-debug.log*
 .manus-logs/
 
+
+.vercel
+.vercel_python_packages/

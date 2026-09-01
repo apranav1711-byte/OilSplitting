@@ -1,0 +1,10 @@
+# Ignore Python backend and model files for Vercel static frontend build
+requirements.txt
+app.py
+*.py
+src/
+tests/
+checkpoints/
+data/
+__pycache__/
+*.pt
