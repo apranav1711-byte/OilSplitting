@@ -1,5 +1,5 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowUpRight, Radar, ShieldCheck, Sparkles, Wind } from "lucide-react";
+import { ArrowUpRight, Radar, ShieldCheck, Sparkles, Wind, Droplets } from "lucide-react";
 import { Link } from "wouter";
 import { ScreenHeader, RiskBadge } from "@/components/ScreenHeader";
 import { kpis, sarSignalSeries, candidateFeed } from "@/lib/demoData";
@@ -18,12 +18,18 @@ export default function Overview() {
         eyebrow="Maritime SAR Surveillance Desk / Live View"
         title="Good morning, Operator."
       >
+        <Link href="/simulation">
+          <a className="solid-button bg-rose-600 hover:bg-rose-700 shadow-rose-950">
+            <Droplets size={16} /> 60 FPS Live Simulator
+          </a>
+        </Link>
         <Link href="/detection">
-          <a className="solid-button">
-            <Radar size={16} /> Open Detection Studio
+          <a className="outline-button">
+            <Radar size={16} /> Detection Studio
           </a>
         </Link>
       </ScreenHeader>
+
 
       {/* Hand Note Tape Banner */}
       <section className="hand-note note-blue">

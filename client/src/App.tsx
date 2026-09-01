@@ -1,6 +1,7 @@
 import { Route, Switch } from "wouter";
 import DashboardLayout from "./components/DashboardLayout";
 import Overview from "./pages/Overview";
+import LiveSimulator from "./pages/LiveSimulator";
 import DetectionStudio from "./pages/DetectionStudio";
 import LookAlikeFeed from "./pages/LookAlikeFeed";
 import WindLab from "./pages/WindLab";
@@ -12,6 +13,7 @@ function Router() {
     <DashboardLayout>
       <Switch>
         <Route path="/" component={Overview} />
+        <Route path="/simulation" component={LiveSimulator} />
         <Route path="/detection" component={DetectionStudio} />
         <Route path="/feed" component={LookAlikeFeed} />
         <Route path="/wind-lab" component={WindLab} />
@@ -22,6 +24,7 @@ function Router() {
     </DashboardLayout>
   );
 }
+
 
 export default function App() {
   return <Router />;
