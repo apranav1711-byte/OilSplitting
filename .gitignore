@@ -38,3 +38,12 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+
+# Node / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.manus-logs/
+

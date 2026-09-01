@@ -108,7 +108,19 @@ python -m src.engine.eval_benchmark
 python -m src.engine.train
 ```
 
-### 5. Run Unit Tests
+### 5. Run Modern React + Vite Frontend (chargeBackShield Sketch Design)
+```bash
+# Install frontend dependencies
+npm install
+
+# Start Vite dev server (runs on http://localhost:3000)
+npm run dev
+
+# Or build for production
+npm run build
+```
+
+### 6. Run Python Unit Tests
 ```bash
 python -m unittest discover tests
 ```
@@ -119,6 +131,18 @@ python -m unittest discover tests
 
 ```
 OilSplitting/
+├── client/                     # React 19 + Vite Frontend (chargeBackShield Sketch Design)
+│   ├── index.html              # Caveat, DM Mono, and Inter typography
+│   ├── src/
+│   │   ├── index.css           # Tactile sketch-card, hand-note, and cream paper styling
+│   │   ├── App.tsx             # Wouter routing across 6 surveillance views
+│   │   ├── main.tsx            # React application root
+│   │   ├── components/         # DashboardLayout (sidebar), ScreenHeader, UI suite
+│   │   ├── pages/              # Overview, DetectionStudio, LookAlikeFeed, WindLab, Transparency, AuditLog
+│   │   └── lib/                # Benchmark data, incident records, and confusion matrix
+├── package.json                # Frontend npm configuration (React, Tailwind v4, Recharts, Lucide)
+├── vite.config.ts              # Vite configuration with Tailwind v4 & aliases
+├── tsconfig.json               # TypeScript compiler configuration
 ├── app.py                      # Interactive Streamlit Web Application
 ├── requirements.txt            # Python dependencies
 ├── .gitignore                  # Git ignore rules

@@ -28,66 +28,98 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern, premium appearance
+# Custom CSS for chargeBackShield sketch aesthetic
 st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-    .main {
-        background-color: #0b0f19;
-        color: #f1f5f9;
+    .stApp {
+        background-color: #F7F3EA;
+        color: #2F2B29;
+        font-family: 'Inter', sans-serif;
     }
     .metric-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
+        position: relative;
+        background: #FFFCF4;
+        border: 1.5px solid #3E3833;
+        border-radius: 18px 15px 20px 16px;
+        box-shadow: 4px 4px 0 rgba(62, 56, 51, 0.12);
         padding: 16px;
         margin-bottom: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+    }
+    .metric-card:before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border: 1px dashed rgba(62, 56, 51, 0.15);
+        border-radius: 14px 11px 16px 12px;
+        pointer-events: none;
     }
     .metric-title {
-        font-size: 0.85rem;
-        color: #94a3b8;
+        font-family: 'DM Mono', monospace;
+        font-size: 0.72rem;
+        color: #7F7466;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
         margin-bottom: 4px;
+        font-weight: 500;
     }
     .metric-value {
-        font-size: 1.6rem;
+        font-family: 'DM Mono', monospace;
+        font-size: 1.65rem;
         font-weight: 700;
-        color: #38bdf8;
+        color: #2F2B29;
     }
     .badge-success {
-        background-color: rgba(16, 185, 129, 0.2);
-        color: #34d399;
-        border: 1px solid #059669;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        font-weight: 600;
+        background-color: #E0F5E9;
+        color: #277653;
+        border: 1px solid #42B77E;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
     }
     .badge-danger {
-        background-color: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-        border: 1px solid #dc2626;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        font-weight: 600;
+        background-color: #FFE4E0;
+        color: #AD4943;
+        border: 1px solid #DF665E;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
+    .hand-note {
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        padding: 0.6rem 0.85rem;
+        background: #DFF3FF;
+        border: 1px dashed #3395FF;
+        transform: rotate(-0.8deg);
         border-radius: 8px;
-        padding: 8px 16px;
-        background-color: #1e293b;
-        color: #cbd5e1;
+        margin-bottom: 1rem;
+        color: #1e3a5f;
     }
-    .stTabs [aria-selected="true"] {
-        background-color: #0284c7 !important;
-        color: #ffffff !important;
+    .hand-note span {
+        font-family: 'Caveat', cursive;
+        font-weight: 700;
+        font-size: 1.25rem;
+    }
+    .hand-note strong {
+        font-size: 0.75rem;
+    }
+    .marker-heading {
+        font-family: 'Caveat', cursive;
+        font-size: 2.5rem;
+        color: #2F2B29;
+        font-weight: 700;
+        line-height: 1.1;
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 @st.cache_resource
