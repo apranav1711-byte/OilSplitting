@@ -1,5 +1,9 @@
 # 🌊 Wind-Field-Integrated Deep Learning for Marine Oil Spill Detection
 
+## SIH26059 Antarctic prototype
+
+**[Open PolarRoute →](SIH26059/README.md)** — an offline voyage-planning prototype with sea-ice forecasts, iceberg drift ensembles, constrained route comparison, editable scenarios and data exports. All bundled data is synthetic. The original oil-spill project continues below.
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-ff4b4b.svg)](https://streamlit.io/)
