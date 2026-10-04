@@ -1,12 +1,14 @@
 # PolarRoute — SIH26059
 
-An offline prototype for **AI-Enabled Antarctic Sea-Ice, Iceberg Trajectory, and Navigation Decision Support System**, Ministry of Earth Sciences. The original OilSplitting application is preserved alongside this folder.
+An observation-backed local prototype for **AI-Enabled Antarctic Sea-Ice, Iceberg Trajectory, and Navigation Decision Support System**, Ministry of Earth Sciences. The original OilSplitting application is preserved alongside this folder.
 
-**All bundled environmental fields and coastlines are synthetic.** Calculations run locally; there are no connected satellite or live marine feeds. This is research demonstration software, not an operational navigation service.
+**The default workspace uses real, dated data:** NOAA OISST sea-ice/sea-temperature analysis, ERA5 wind via Open-Meteo, and Natural Earth Antarctic coastline geometry. A processed 17 September 2026 snapshot is included for offline use. The date picker retrieves other historical dates over HTTPS and caches successful loads. Synthetic demonstrations remain separately labelled. This is research software, not an operational navigation service.
+
+The dark ocean theme distinguishes cyan observation controls, warm route highlights and muted unavailable areas. Missing cells are hatched and blocked. Future frames in real-data mode are explicitly labelled persistence projections, not measured future conditions. Wave, current, bathymetry and iceberg-inventory sources are **not connected**; absent layers remain unassessed. See [data provenance, units, licenses and limitations](data/SOURCES.md).
 
 ## Run
 
-Python 3.10+ and NumPy are the only runtime requirements:
+Requires Python 3.10+, NumPy and netCDF4:
 
 ```console
 python -m pip install -r requirements.txt
@@ -29,6 +31,8 @@ The Research library contains four verified papers with applicability notes and 
 - **Data workspace:** import validated JSON or rectangular CSV grids; edit provenance; save up to six voyages in this browser; export scenario JSON, grid CSV, complete results, route GeoJSON, waypoint CSV or a voyage brief.
 
 ## Five-minute demo
+
+The app opens the real NOAA analysis by default. Inspect the date and Connected sources in Data workspace. Enable Wind, switch to Sea temperature, and inspect supported cells. Choose another date and press Load real data to retrieve it. Recent final NOAA products can lag publication; load failures are shown without substituting fake data. The default winter snapshot can legitimately have no accepted passage. The steps below demonstrate the separately labelled synthetic scenarios.
 
 1. Start with **Coastal passage**, 72 hours. Compare the three route cards and their exposure/distance trade-off. Different objectives may produce identical paths.
 2. Play the timeline; inspect an iceberg, then enable Ensemble and Exclusions. The exclusion mask covers the entire selected forecast horizon.
@@ -82,10 +86,10 @@ Tests cover valid routes, blocked corridors, clearance monotonicity, reproducibi
 
 `model.py` contains the scientific baseline and input validation; `app.py` serves the API; `index.html`, `style.css` and `ui.js` provide the offline interface. `ADAPTATION.md` explains the relationship to the original oil-spill project.
 
-Endpoints: `GET /health`, `GET /api/scenario?kind=standard|crosswind|blocked`, `GET /api/evaluation`, `POST /api/run` with `{ "scenario": ..., "options": ... }`, and `POST /api/import-csv` with `{ "csv": "...", "name": "..." }`.
+Endpoints: `GET /health`, `GET /api/observations?date=YYYY-MM-DD`, `GET /api/scenario?kind=standard|crosswind|blocked`, `GET /api/evaluation`, `POST /api/run` with `{ "scenario": ..., "options": ... }`, and `POST /api/import-csv` with `{ "csv": "...", "name": "..." }`. Observation loads access only fixed NOAA and Open-Meteo endpoints; they never accept an arbitrary provider URL. Network calls time out and TLS verification stays enabled.
 
 Options: `horizon` 24/48/72 hours, `speed` 5–18 knots, `ice_limit` 0.15–0.9, `buffer_km` 5–40, `wind_scale` 0–2, `max_wave` 1–10 m, `vessel_draft` 1–20 m, `forecast_method` ridge/persistence/supplied.
 
 ## Future real-data integration
 
-The app links to [NSIDC sea-ice concentration](https://nsidc.org/data/g02202), [Copernicus ocean forecasts](https://data.marine.copernicus.eu/product/GLOBAL_ANALYSISFORECAST_PHY_001_024/description), [ERA5 historical forcing](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels), [USNIC iceberg products](https://usicecenter.gov/Products/AntarcIcebergs) and [OpenBerg](https://opendrift.github.io/autoapi/opendrift/models/openberg/index.html). They are integration references, not connected services. A real deployment requires properly licensed Antarctic observations, forecast forcing, verified masks/bathymetry, vessel calibration, independent skill assessment and expert review.
+NOAA OISST and ERA5 historical wind are connected. The app also links to [NSIDC concentration](https://nsidc.org/data/g02202), [Copernicus ocean forecasts](https://data.marine.copernicus.eu/product/GLOBAL_ANALYSISFORECAST_PHY_001_024/description), [USNIC iceberg products](https://usicecenter.gov/Products/AntarcIcebergs) and [OpenBerg](https://opendrift.github.io/autoapi/opendrift/models/openberg/index.html) as future integration references. A real deployment still requires forecast forcing, verified bathymetry, vessel calibration, independent skill assessment and expert review.

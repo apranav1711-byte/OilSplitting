@@ -102,6 +102,7 @@ def validate(s):
         if a.shape!=(H,W) or not np.isfinite(a).all() or (a<lo).any() or (a>hi).any():raise ValueError(f'{k} must be a finite {H}×{W} grid in [{lo},{hi}]. Missing values cannot become open water.')
         if k=='land' and not np.isin(a,[0,1]).all():raise ValueError('land must contain booleans or 0/1.')
     for k,lo,hi in [('wind_u',-50,50),('wind_v',-50,50),('current_u',-3,3),('current_v',-3,3),('wave_height',0,20),('depth',0,12000)]:
+        if s.get('data_kind')=='observational' and k not in s:continue
         a=array(s.get(k,0 if k=='wave_height' else 10000 if k=='depth' else None))
         if a.shape!=(H,W) or not np.isfinite(a).all() or (a<lo).any() or (a>hi).any():raise ValueError(f'{k} must be a finite scalar or {H}×{W} grid in [{lo},{hi}].')
     for k in ('start','goal'):
@@ -116,6 +117,11 @@ def validate(s):
             v=b.get(k)
             if type(v) not in (float,int) or not math.isfinite(v) or not lo<=v<=hi:raise ValueError(f'Iceberg {k} must be in [{lo},{hi}].')
         if s['land'][int(round(b['y']))][int(round(b['x']))]:raise ValueError(f"{b['id']} starts on land.")
+    if 'missing' in s:
+        a=np.asarray(s['missing'])
+        if a.shape!=(H,W) or not np.isin(a,[0,1]).all():raise ValueError('missing must be a boolean 30×44 grid.')
+    if s.get('data_kind')=='observational' and s['icebergs'] and any(k not in s for k in ('wind_u','wind_v','current_u','current_v')):
+        raise ValueError('Iceberg drift requires wind and current data. Import verified forcing before adding icebergs to an observational scenario.')
     zones=s.get('exclusion_zones',[])
     if not isinstance(zones,list) or len(zones)>8:raise ValueError('Provide up to eight exclusion zones.')
     for zone in zones:
@@ -152,6 +158,7 @@ def sample(a,x,y):
 
 
 def iceberg_tracks(s,steps,wind_scale=1):
+    if not s['icebergs']:return []
     rng=np.random.default_rng(59);dx,dy=metrics(s);tracks=[]
     wu,wv,cu,cv=(array(s[k]) for k in ('wind_u','wind_v','current_u','current_v'))
     for b in s['icebergs']:
@@ -191,7 +198,7 @@ def envelope(tracks,steps,buffer_km,dx=DX,dy=DY):
 def route(s,ice,blocked,speed,mode):
     sy,sx=s['start'][1],s['start'][0];gy,gx=s['goal'][1],s['goal'][0]
     if blocked[sy,sx] or blocked[gy,gx]:return None
-    cu,cv=array(s['current_u']),array(s['current_v']);waves=array(s.get('wave_height',0));mx,my=metrics(s)
+    cu,cv=array(s.get('current_u',0)),array(s.get('current_v',0));waves=array(s.get('wave_height',0));mx,my=metrics(s)
     def edge(y,x,ny,nx):
         km=haversine(lonlat(s,[x,y]),lonlat(s,[nx,ny]));c=float((ice[y,x]+ice[ny,nx])/2);wave=float((waves[y,x]+waves[ny,nx])/2)
         norm=math.hypot((nx-x)*mx,(ny-y)*my)
@@ -236,6 +243,7 @@ def run(s,options=None):
     speed=number('speed',12,5,18);limit=number('ice_limit',.65,.15,.9);buffer=number('buffer_km',12,5,40);wind=number('wind_scale',1,0,2)
     max_wave=number('max_wave',4,1,10);draft=number('vessel_draft',8,1,20);method=o.get('forecast_method','ridge');steps=int(horizon/6)
     if method not in ('ridge','persistence','supplied'):raise ValueError('forecast_method must be ridge, persistence or supplied.')
+    if s.get('data_kind')=='observational' and method=='ridge':raise ValueError('Use persistence or supplied forecasts with real observations. The synthetic-trained baseline is restricted to demo data.')
     if method=='supplied':
         if 'forecast_frames' not in s or len(s['forecast_frames'])<steps+1:raise ValueError('Not enough supplied 6-hour forecast frames for this horizon.')
         forecasts=np.array(s['forecast_frames'][:steps+1])
@@ -246,12 +254,13 @@ def run(s,options=None):
     for zone in s.get('exclusion_zones',[]):
         zones|=np.hypot((xx-zone['x'])*dx,(yy-zone['y'])*dy)<=zone['radius_km']+math.hypot(dx,dy)/2
     reasons['zones']=zones
+    reasons['missing']=np.array(s.get('missing',np.zeros((H,W),bool)),bool)
     blocked=np.logical_or.reduce(list(reasons.values()));routes=[];rejected=[]
     for mode in MODES:
         r=route(s,ice,blocked,speed,mode)
         if r:
             r['within_horizon']=bool(r['eta_hours']<=horizon);(routes if r['within_horizon'] else rejected).append(r)
-    warnings=[]
+    warnings=list(s.get('source_notes',[]))
     if s.get('data_kind','user-supplied')=='synthetic':warnings.append('Synthetic scenario: environmental fields and coastline are not observations.')
     if method=='ridge':warnings.append('Sea-ice model is trained on synthetic sequences, not Antarctic observations.')
     if 'wave_height' not in s:warnings.append('No wave field supplied; waves were not assessed.')
@@ -272,7 +281,7 @@ def run(s,options=None):
         forecasts=np.round(forecasts,4).tolist(),tracks=tracks,blocked=blocked.tolist(),block_reasons={k:v.tolist() for k,v in reasons.items()},routes=routes,rejected_routes=rejected,
         grid=dict(width=W,height=H,dx_km=dx,dy_km=dy),warnings=warnings,
         stats=dict(run_id=fingerprint,elapsed_ms=round((time.perf_counter()-started)*1000,1),blocked_percent=round(float(blocked.mean()*100),1),reason_counts={k:int(v.sum()) for k,v in reasons.items()},
-                   ice_mean=[round(float(f[~reasons['land']].mean()),4) if (~reasons['land']).any() else None for f in forecasts]),
+                   ice_mean=[round(float(f[~(reasons['land']|reasons['missing'])].mean()),4) if (~(reasons['land']|reasons['missing'])).any() else None for f in forecasts]),
         model='Synthetic ridge / persistence / supplied fields; spatial RK2 reduced-drag ensemble; constrained routing',
         limitations=['Sensitivity spread is not calibrated probability.','Fuel index is a relative proxy, not litres or measured savings.',
                      'Static forcing; no Coriolis, sea-ice mechanics, melting or iceberg grounding.','Prototype routes are not certified safe navigation.'])

@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from model import run, sample_scenario, evaluate, import_csv
+from real_data import observations
 
 ROOT=Path(__file__).resolve().parent
 
@@ -23,12 +24,15 @@ class Handler(BaseHTTPRequestHandler):
             try:self.send(200,sample_scenario(parse_qs(u.query).get('kind',['standard'])[0]))
             except ValueError as e:self.send(400,{'error':str(e)})
         elif u.path=='/api/evaluation':self.send(200,evaluate())
+        elif u.path=='/api/observations':
+            try:self.send(200,observations(parse_qs(u.query).get('date',[None])[0]))
+            except (OSError,ValueError,RuntimeError) as e:self.send(503,{'error':'Observation data unavailable: '+str(e)[:250]})
         elif u.path=='/health':self.send(200,{'status':'ok','project':'SIH26059'})
         else:self.send(404,{'error':'Not found'})
 
     def do_POST(self):
         if self.path not in ('/api/run','/api/import-csv'):return self.send(404,{'error':'Not found'})
-        # No network requests, no disk writes, no secrets. Reject cross-origin browser posts.
+        # Calculation/import requests are local. Public provider reads use fixed URLs.
         if self.headers.get('Origin') not in (None,'http://127.0.0.1:8059','http://localhost:8059'):
             return self.send(403,{'error':'Cross-origin requests are not allowed.'})
         try:

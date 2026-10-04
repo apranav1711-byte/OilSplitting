@@ -2,7 +2,7 @@
 
 ## SIH26059 Antarctic prototype
 
-**[Open PolarRoute →](SIH26059/README.md)** — an offline voyage-planning prototype with sea-ice forecasts, iceberg drift ensembles, constrained route comparison, editable scenarios and data exports. All bundled data is synthetic. The original oil-spill project continues below.
+**[Open PolarRoute →](SIH26059/README.md)** — an Antarctic planning prototype with dated NOAA ice/sea-temperature analysis, ERA5 wind, real coastline geometry, a dark ocean interface and separately labelled synthetic scenarios. Includes source attribution, constrained route calculations and data exports. The original oil-spill project continues below.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
